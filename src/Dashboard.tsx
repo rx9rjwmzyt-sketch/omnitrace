@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { supabase } from './supabase';
 import { LayoutDashboard, Package, Activity, RefreshCw, Server } from 'lucide-react';
 import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar 
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,  
 } from 'recharts';
 
 export default function Dashboard() {
