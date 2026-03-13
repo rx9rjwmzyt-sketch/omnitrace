@@ -1,192 +1,164 @@
-import { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import { supabase } from './supabase';
-import { LayoutDashboard, Package, Activity, RefreshCw, Server } from 'lucide-react';
-import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,  
-} from 'recharts';
+import { useNavigate } from 'react-router-dom';
+
+// Typage strict
+interface Scan {
+  id: number;
+  tracking_number: string;
+  created_at: string;
+}
 
 export default function Dashboard() {
-  const [events, setEvents] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [scans, setScans] = useState<Scan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null); // NOUVEAU : État d'erreur
+  const navigate = useNavigate();
 
-  const fetchEvents = async () => {
-    setIsLoading(true);
+  const fetchScans = async () => {
+    setLoading(true);
+    setError(null); // On réinitialise l'erreur à chaque essai
+    
     try {
       const { data, error } = await supabase
-        .from('logistics_events')
+        .from('scans')
         .select('*')
-        .order('timestamp_local', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(100); // FIX SENIOR : On limite aux 100 derniers pour éviter le crash mémoire
 
       if (error) throw error;
-      setEvents(data || []);
-    } catch (error) {
-      console.error("Erreur:", error);
+      setScans(data || []);
+    } catch (err: any) {
+      console.error("Erreur Fetch:", err);
+      setError("Impossible de charger les données logistiques. Vérifiez votre connexion.");
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchEvents();
+    // 1. On charge les données au démarrage
+    fetchScans();
+
+    // 2. FIX SENIOR : Écoute en TEMPS RÉEL des nouveaux scans !
+    const subscription = supabase
+      .channel('scans-channel')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'scans' }, (payload) => {
+        // Magie : On ajoute le nouveau scan tout en haut de la liste sans recharger !
+        setScans((currentScans) => [payload.new as Scan, ...currentScans].slice(0, 100));
+      })
+      .subscribe();
+
+    // Nettoyage pour éviter les fuites de mémoire (Memory Leak)
+    return () => {
+      supabase.removeChannel(subscription);
+    };
   }, []);
 
-  // --- MOTEUR D'ANALYTIQUE (BI) ---
-  // On regroupe les scans par heure pour le graphique
-  const hourlyData = useMemo(() => {
-    const counts: Record<string, number> = {};
-    
-    // On trie les événements du plus ancien au plus récent pour le graphique
-    const sortedEvents = [...events].reverse();
-    
-    sortedEvents.forEach(event => {
-      const date = new Date(event.timestamp_local);
-      // On formate l'heure (ex: "14:00")
-      const hour = `${date.getHours().toString().padStart(2, '0')}:00`;
-      counts[hour] = (counts[hour] || 0) + 1;
-    });
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate('/login', { replace: true });
+  };
 
-    return Object.keys(counts).map(hour => ({
-      time: hour,
-      scans: counts[hour]
-    }));
-  }, [events]);
+  const formatDate = (dateString: string) => {
+    return new Intl.DateTimeFormat('fr-FR', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit'
+    }).format(new Date(dateString));
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 p-8 font-sans">
-      
-      {/* HEADER */}
-      <header className="flex justify-between items-center mb-8 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-        <div className="flex items-center gap-4">
-          <div className="bg-indigo-600 p-3 rounded-xl shadow-lg shadow-indigo-600/20">
-            <LayoutDashboard className="text-white" size={24} />
-          </div>
-          <div>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight">OMNITRACE ANALYTICS</h1>
-            <p className="text-sm text-slate-500 font-medium">Global Command Center • Vue C-Level</p>
-          </div>
-        </div>
+    <div className="min-h-screen bg-slate-900 text-slate-200 p-8">
+      <div className="max-w-6xl mx-auto space-y-8">
         
-        <button 
-          onClick={fetchEvents}
-          disabled={isLoading}
-          className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition-all shadow-md"
-        >
-          <RefreshCw size={18} className={isLoading ? "animate-spin" : ""} />
-          {isLoading ? "Sync..." : "Live Update"}
-        </button>
-      </header>
-
-      {/* KPI CARDS (Les chiffres clés en haut) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-5">
-          <div className="bg-blue-500/10 p-4 rounded-full text-blue-600">
-            <Package size={32} />
-          </div>
+        {/* EN-TÊTE */}
+        <header className="flex justify-between items-center bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
           <div>
-            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-1">Total Palettes</p>
-            <p className="text-4xl font-black text-slate-800">{events.length}</p>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-5">
-          <div className="bg-indigo-500/10 p-4 rounded-full text-indigo-600">
-            <Activity size={32} />
-          </div>
-          <div>
-            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-1">Pic d'Activité</p>
-            <p className="text-2xl font-bold text-slate-800">
-              {hourlyData.length > 0 ? Math.max(...hourlyData.map(d => d.scans)) : 0} <span className="text-sm text-slate-500 font-medium">scans/heure</span>
+            <h1 className="text-3xl font-extrabold text-white tracking-wider">
+              OMNI<span className="text-blue-500">TRACE</span> ADMIN
+            </h1>
+            <p className="text-slate-400 text-sm mt-1 flex items-center gap-2">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+              </span>
+              Connecté en Temps Réel
             </p>
           </div>
-        </div>
+          <button 
+            onClick={handleLogout}
+            className="px-6 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm font-bold transition-all active:scale-95 shadow-[0_0_15px_rgba(220,38,38,0.4)]"
+          >
+            VERROUILLER LA SESSION
+          </button>
+        </header>
 
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-5">
-          <div className="bg-emerald-500/10 p-4 rounded-full text-emerald-600">
-            <Server size={32} />
+        {/* NOUVEAU : BANNIÈRE D'ERREUR UI */}
+        {error && (
+          <div className="bg-red-900/50 border border-red-500 text-red-200 p-4 rounded-lg flex items-center gap-3 animate-pulse">
+            <span>⚠️</span>
+            <p className="font-semibold">{error}</p>
+            <button onClick={fetchScans} className="ml-auto underline hover:text-white">Réessayer</button>
           </div>
-          <div>
-            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-1">Cloud Status</p>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse"></div>
-              <p className="text-lg font-bold text-slate-800">PostgreSQL Online</p>
-            </div>
+        )}
+
+        {/* STATISTIQUES */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-md">
+            <h3 className="text-slate-400 text-sm font-semibold uppercase mb-2">Scans Récents</h3>
+            <p className="text-4xl font-bold text-blue-400">{scans.length}</p>
+          </div>
+          <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-md opacity-50">
+            <h3 className="text-slate-400 text-sm font-semibold uppercase mb-2">Taux d'Activité</h3>
+            <p className="text-4xl font-bold text-slate-300">En direct</p>
+          </div>
+          <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-md opacity-50">
+            <h3 className="text-slate-400 text-sm font-semibold uppercase mb-2">Statut Serveur</h3>
+            <p className="text-4xl font-bold text-emerald-400">Opérationnel</p>
           </div>
         </div>
-      </div>
 
-      {/* GRAPHIQUE D'ACTIVITÉ */}
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-8">
-        <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-6">Flux d'Entrepôt par Heure</h2>
-        <div className="h-72 w-full">
-          {hourlyData.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={hourlyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorScans" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
-                <Tooltip 
-                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                  labelStyle={{ fontWeight: 'bold', color: '#0f172a' }}
-                />
-                <Area type="monotone" dataKey="scans" stroke="#4f46e5" strokeWidth={3} fillOpacity={1} fill="url(#colorScans)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-slate-400 font-medium">
-              Pas assez de données pour générer le graphique
-            </div>
-          )}
+        {/* TABLEAU DES DONNÉES */}
+        <div className="bg-slate-800 rounded-xl border border-slate-700 shadow-xl overflow-hidden">
+          <div className="p-6 border-b border-slate-700 flex justify-between items-center">
+            <h2 className="text-xl font-bold text-white">Flux Logistique</h2>
+            <span className="text-xs bg-slate-700 text-slate-300 px-3 py-1 rounded-full">Affichage des 100 derniers</span>
+          </div>
+          
+          <div className="overflow-x-auto">
+            {loading ? (
+              <div className="p-12 text-center text-slate-400 flex flex-col items-center gap-4">
+                <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                <p>Synchronisation avec la base de données...</p>
+              </div>
+            ) : scans.length === 0 && !error ? (
+              <div className="p-12 text-center text-slate-500 font-mono">
+                En attente du premier scan opérateur...
+              </div>
+            ) : (
+              <table className="w-full text-left">
+                <thead className="bg-slate-900 text-slate-400 text-xs uppercase font-semibold tracking-wider">
+                  <tr>
+                    <th className="px-6 py-4">ID Opération</th>
+                    <th className="px-6 py-4">Code-barres</th>
+                    <th className="px-6 py-4">Horodatage</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-700/50">
+                  {scans.map((scan) => (
+                    <tr key={scan.id} className="hover:bg-slate-700/40 transition-colors group">
+                      <td className="px-6 py-4 text-slate-500 font-mono text-sm group-hover:text-blue-400 transition-colors">#{scan.id}</td>
+                      <td className="px-6 py-4 text-white font-mono font-bold tracking-wider text-lg">{scan.tracking_number}</td>
+                      <td className="px-6 py-4 text-slate-400 text-sm">{formatDate(scan.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
-      </div>
 
-      {/* TABLEAU DES DONNÉES BRUTES */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-6 border-b border-slate-200 bg-slate-50/50">
-          <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Registre Logistique Brut</h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-slate-50 text-slate-400 text-xs uppercase tracking-widest border-b border-slate-200">
-                <th className="p-4 font-bold">Palette ID</th>
-                <th className="p-4 font-bold">Action</th>
-                <th className="p-4 font-bold">Heure Scan (Local)</th>
-                <th className="p-4 font-bold">Sync Cloud</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {events.slice(0, 10).map((event) => (
-                <tr key={event.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="p-4 font-bold text-slate-800">{event.pallet_id}</td>
-                  <td className="p-4">
-                    <span className="px-3 py-1 rounded-full text-xs font-black bg-indigo-100 text-indigo-700">
-                      {event.event_type}
-                    </span>
-                  </td>
-                  <td className="p-4 text-slate-500 font-mono text-sm">
-                    {new Date(event.timestamp_local).toLocaleString()}
-                  </td>
-                  <td className="p-4 text-slate-500 font-mono text-sm">
-                    {new Date(event.created_at).toLocaleTimeString()}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {events.length > 10 && (
-            <div className="p-4 text-center text-sm font-medium text-slate-400 bg-slate-50 border-t border-slate-100">
-              Affichage des 10 derniers événements sur {events.length}
-            </div>
-          )}
-        </div>
       </div>
-
     </div>
   );
 }
