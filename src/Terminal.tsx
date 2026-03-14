@@ -7,7 +7,6 @@ export default function Terminal() {
   const [scanStatus, setScanStatus] = useState<'idle' | 'success' | 'error' | 'offline'>('idle');
   const [scanType, setScanType] = useState<'INBOUND' | 'OUTBOUND'>('INBOUND');
   
-  // 👈 NOUVEAUTÉ : L'horloge en direct
   const [currentTime, setCurrentTime] = useState(new Date());
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -32,12 +31,11 @@ export default function Terminal() {
   useEffect(() => {
     inputRef.current?.focus();
     
-    // 👈 NOUVEAUTÉ : Le moteur de l'horloge (tourne chaque seconde)
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
 
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      clearInterval(timer); // On nettoie l'horloge en quittant
+      clearInterval(timer);
     };
   }, []);
 
@@ -53,15 +51,25 @@ export default function Terminal() {
     setScanStatus('idle');
 
     try {
+      // 🕵️‍♂️ L'INFILTRATION : On demande à Supabase "Qui tient ce scanner ?"
+      const { data: { user } } = await supabase.auth.getUser();
+
+      // 📦 L'ENVOI : On ajoute l'email de l'opérateur au colis !
       const { error } = await supabase
         .from('scans')
-        .insert([{ tracking_number: trackingNumber.trim(), scan_type: scanType }]);
+        .insert([{ 
+          tracking_number: trackingNumber.trim(), 
+          scan_type: scanType,
+          operator_email: user?.email // 👈 LA LIGNE MAGIQUE EST ICI
+        }]);
+        
       if (error) throw error;
 
       setScanStatus('success');
       playBeep('success');
       setTrackingNumber('');
     } catch (error) {
+      console.error("Erreur d'envoi:", error);
       setScanStatus('error');
       playBeep('error');
     } finally {
@@ -90,7 +98,6 @@ export default function Terminal() {
     <div className={`min-h-screen flex flex-col items-center justify-center p-4 transition-colors duration-300 ${getBackgroundColor()}`}>
       <div className="max-w-md w-full bg-slate-800 p-8 rounded-xl shadow-2xl border border-slate-700 relative overflow-hidden">
         
-        {/* 👈 NOUVEAUTÉ : Affichage de l'horloge en haut */}
         <div className="absolute top-0 left-0 w-full bg-slate-900/50 py-2 flex justify-center border-b border-slate-700/50">
           <p className="font-mono text-slate-400 text-xs tracking-widest">
             {currentTime.toLocaleDateString('fr-FR')} - <span className="text-white">{currentTime.toLocaleTimeString('fr-FR')}</span>

@@ -7,15 +7,17 @@ interface Scan {
   tracking_number: string;
   created_at: string;
   scan_type: string;
+  operator_email?: string; // On prépare le terrain pour l'utilisateur
 }
 
 export default function Dashboard() {
   const [scans, setScans] = useState<Scan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
-  // 👈 NOUVEAUTÉ 1 : L'état de la barre de recherche
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // 👈 NOUVEAUTÉ : L'état du filtre
+  const [filterType, setFilterType] = useState('ALL');
 
   useEffect(() => {
     fetchScans();
@@ -61,38 +63,41 @@ export default function Dashboard() {
       .reverse();
   }, [scans]);
 
-  // 👈 NOUVEAUTÉ 2 : Le filtre magique ! On ne garde que les colis qui correspondent à la recherche
-  const filteredScans = scans.filter(scan => 
-    scan.tracking_number.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // 👈 NOUVEAUTÉ : On combine la recherche texte ET le filtre de type !
+  const filteredScans = scans.filter(scan => {
+    const matchesSearch = scan.tracking_number.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesType = filterType === 'ALL' || scan.scan_type === filterType;
+    return matchesSearch && matchesType;
+  });
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-800">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-lg font-medium text-slate-500">Chargement de l'espace manager...</p>
-        </div>
-      </div>
-    );
-  }
+  const exportToCSV = () => {
+    const headers = ["Référence Colis", "Type de Flux", "Date", "Heure"];
+    const csvData = filteredScans.map(scan => {
+      const dateObj = new Date(scan.created_at);
+      return [
+        scan.tracking_number,
+        scan.scan_type === 'OUTBOUND' ? 'Expedition' : 'Reception',
+        dateObj.toLocaleDateString('fr-FR'),
+        dateObj.toLocaleTimeString('fr-FR')
+      ].join(',');
+    });
+    const csvContent = [headers.join(','), ...csvData].join('\n');
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `omnitrace_export_${new Date().toLocaleDateString('fr-FR').replace(/\//g, '-')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
-  if (error) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div className="bg-white border border-red-200 shadow-sm p-8 rounded-xl text-center max-w-lg">
-          <p className="text-red-600 font-semibold text-xl mb-2">Erreur de connexion</p>
-          <code className="bg-slate-100 p-2 rounded text-slate-600 text-sm block">{error}</code>
-        </div>
-      </div>
-    );
-  }
+  if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-800"><div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div></div>;
+  if (error) return <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4"><div className="bg-white border border-red-200 shadow-sm p-8 rounded-xl text-center max-w-lg"><p className="text-red-600 font-semibold text-xl mb-2">Erreur</p><code>{error}</code></div></div>;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 p-4 md:p-8 font-sans">
       <div className="max-w-6xl mx-auto">
-        
-        {/* En-tête Manager */}
         <div className="mb-8 flex flex-col md:flex-row md:justify-between md:items-end gap-4 border-b border-slate-200 pb-6">
           <div>
             <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Supervision Logistique</h1>
@@ -104,26 +109,18 @@ export default function Dashboard() {
           </span>
         </div>
 
-        {/* LA SECTION DES GRAPHIQUES */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-center">
             <p className="text-slate-500 text-sm font-medium mb-1">Total Colis Traités</p>
             <p className="text-5xl font-bold text-slate-900">{scans.length}</p>
-            <div className="mt-4 pt-4 border-t border-slate-100">
-              <p className="text-xs text-slate-400">Depuis le début de l'activité</p>
-            </div>
           </div>
-          
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm md:col-span-2 h-72 flex flex-col">
             <p className="text-slate-800 font-semibold mb-6">Volume d'activité (7 derniers jours)</p>
             <div className="flex-1 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
                   <XAxis dataKey="date" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
-                  <Tooltip 
-                    cursor={{ fill: '#f1f5f9' }} 
-                    contentStyle={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#0f172a', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                  />
+                  <Tooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#0f172a' }} />
                   <Bar dataKey="Colis" fill="#6366f1" maxBarSize={40} radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -131,23 +128,41 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* 🗂️ Table des Scans avec LA BARRE DE RECHERCHE */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-6 py-5 border-b border-slate-200 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
             <h2 className="text-lg font-semibold text-slate-800">Historique récent</h2>
             
-            {/* 👈 NOUVEAUTÉ 3 : L'Input de recherche */}
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                🔍
-              </span>
-              <input
-                type="text"
-                placeholder="Rechercher un numéro..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 w-full sm:w-64 transition-shadow"
-              />
+            <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+              
+              {/* 👈 NOUVEAUTÉ : Le Selecteur de Filtre */}
+              <select 
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value)}
+                className="bg-slate-50 border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2 outline-none cursor-pointer"
+              >
+                <option value="ALL">Tous les flux</option>
+                <option value="INBOUND">📥 Réceptions uniquement</option>
+                <option value="OUTBOUND">📤 Expéditions uniquement</option>
+              </select>
+
+              <div className="relative flex-1 sm:w-64">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">🔍</span>
+                <input
+                  type="text"
+                  placeholder="Rechercher un numéro..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 w-full transition-shadow"
+                />
+              </div>
+              
+              <button
+                onClick={exportToCSV}
+                disabled={filteredScans.length === 0}
+                className="bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+              >
+                <span>📥</span> Exporter
+              </button>
             </div>
           </div>
 
@@ -162,18 +177,16 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {/* On utilise filteredScans au lieu de scans ! */}
                 {filteredScans.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="px-6 py-12 text-center text-slate-500">
-                      {searchTerm ? "Aucun colis trouvé pour cette recherche. 🕵️‍♂️" : "Aucune donnée disponible pour le moment."}
+                      Aucune donnée pour ce filtre. 🕵️‍♂️
                     </td>
                   </tr>
                 ) : (
                   filteredScans.map((scan) => {
                     const dateObj = new Date(scan.created_at);
                     const isOutbound = scan.scan_type === 'OUTBOUND';
-
                     return (
                       <tr key={scan.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4">

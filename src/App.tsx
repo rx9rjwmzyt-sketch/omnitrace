@@ -1,20 +1,20 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from './supabase';
-import Terminal from './Terminal';
 import Dashboard from './Dashboard';
+import Terminal from './Terminal';
 import Login from './Login';
 
-function App() {
+export default function App() {
   const [session, setSession] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [currentView, setCurrentView] = useState<'dashboard' | 'terminal'>('dashboard');
 
   useEffect(() => {
+    // Vérifie s'il y a déjà une session au chargement
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      setLoading(false);
     });
 
+    // Écoute les changements (connexion / déconnexion)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
@@ -22,25 +22,43 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  if (loading) return <div className="bg-slate-900 min-h-screen text-white flex items-center justify-center">Chargement...</div>;
+  // Si pas connecté = On bloque à la porte avec la page Login !
+  if (!session) {
+    return <Login />;
+  }
 
+  // Si connecté = On affiche l'application avec une barre de navigation
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<Terminal />} />
-        <Route path="/login" element={<Login />} />
+    <div className="min-h-screen bg-slate-900">
+      <nav className="bg-slate-900 text-white p-4 flex flex-col sm:flex-row justify-between items-center border-b border-slate-800 gap-4 shadow-md relative z-10">
+        <div className="font-black text-xl tracking-widest">OMNI<span className="text-indigo-500">TRACE</span></div>
         
-        {/* LE VERROU DU CTO */}
-        <Route 
-          path="/dashboard" 
-          element={session ? <Dashboard /> : <Navigate to="/login" replace />} 
-        />
-        
-        {/* LA PREUVE */}
-        <Route path="/verif" element={<h1 className="text-white text-3xl p-10">VERROU ACTIF V3</h1>} />
-      </Routes>
-    </Router>
+        <div className="flex gap-3">
+          <button 
+            onClick={() => setCurrentView('dashboard')} 
+            className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${currentView === 'dashboard' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+          >
+            📊 Manager
+          </button>
+          <button 
+            onClick={() => setCurrentView('terminal')} 
+            className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${currentView === 'terminal' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/30' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+          >
+            🔫 Scanner
+          </button>
+          <button 
+            onClick={() => supabase.auth.signOut()} 
+            className="px-4 py-2 rounded-lg text-sm font-bold bg-red-500/10 text-red-500 hover:bg-red-500/20 border border-red-500/20 transition-colors ml-4"
+          >
+            Déconnexion
+          </button>
+        </div>
+      </nav>
+
+      {/* Affichage de la vue sélectionnée */}
+      <main>
+        {currentView === 'dashboard' ? <Dashboard /> : <Terminal />}
+      </main>
+    </div>
   );
 }
-
-export default App;
