@@ -10,6 +10,7 @@ interface Scan {
 export default function Dashboard() {
   const [scans, setScans] = useState<Scan[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     // 1. Charger les scans existants
@@ -20,58 +21,127 @@ export default function Dashboard() {
       .channel('schema-db-changes')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'scans' }, 
         (payload) => {
+          // Ajoute le nouveau scan tout en HAUT de la liste
           setScans((current) => [payload.new as Scan, ...current]);
         }
       )
       .subscribe();
 
+    // Nettoyage de la connexion quand on quitte la page
     return () => { supabase.removeChannel(channel); };
   }, []);
 
   async function fetchScans() {
-    const { data } = await supabase
-      .from('scans')
-      .select('*')
-      .order('created_at', { ascending: false });
-    if (data) setScans(data);
-    setLoading(false);
+    try {
+      const { data, error } = await supabase
+        .from('scans')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      if (data) setScans(data);
+    } catch (err: any) {
+      console.error("Erreur de chargement:", err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // 🛡️ SÉCURITÉ 1 : L'écran de chargement (Corrige l'erreur Vercel !)
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-green-500 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-xl font-bold animate-pulse text-slate-300">Connexion au serveur...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 🛡️ SÉCURITÉ 2 : L'écran d'erreur
+  if (error) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white p-4">
+        <div className="bg-red-500/10 border border-red-500 p-8 rounded-xl text-center max-w-lg">
+          <p className="text-red-500 font-bold text-2xl mb-4">Alerte Serveur 🚨</p>
+          <p className="text-slate-300 mb-2">Impossible de charger les données :</p>
+          <code className="bg-black/50 p-2 rounded text-red-400 text-sm block">{error}</code>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-8">
-      <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8 flex justify-between items-center">
+    <div className="min-h-screen bg-slate-900 text-white p-4 md:p-8">
+      <div className="max-w-5xl mx-auto">
+        {/* En-tête du Dashboard */}
+        <h1 className="text-2xl md:text-3xl font-bold mb-8 flex flex-col md:flex-row md:justify-between md:items-center gap-4">
           Tableau de Bord SCANPRO
-          <span className="bg-green-500 text-xs px-3 py-1 rounded-full animate-pulse">LIVE</span>
+          <span className="bg-green-500/20 text-green-400 border border-green-500/50 text-xs px-4 py-1.5 rounded-full animate-pulse flex items-center w-fit gap-2 shadow-[0_0_10px_rgba(34,197,94,0.3)]">
+            <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+            CONNEXION LIVE ACTIVE
+          </span>
         </h1>
 
+        {/* Section des Statistiques */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-          <div className="bg-slate-800 p-6 rounded-xl border border-slate-700">
-            <p className="text-slate-400 text-sm uppercase">Total Scans</p>
-            <p className="text-4xl font-black">{scans.length}</p>
+          <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-green-500/10 rounded-full -mr-10 -mt-10 blur-xl"></div>
+            <p className="text-slate-400 text-sm uppercase font-semibold tracking-wider mb-2">Colis Scannés</p>
+            <p className="text-5xl font-black text-white">{scans.length}</p>
           </div>
-          {/* Tu pourras ajouter d'autres stats ici */}
+          
+          <div className="bg-slate-800/30 p-6 rounded-xl border border-slate-700 border-dashed flex items-center justify-center">
+            <p className="text-slate-500 text-sm text-center">Module Expédition<br/>(À venir)</p>
+          </div>
+          <div className="bg-slate-800/30 p-6 rounded-xl border border-slate-700 border-dashed flex items-center justify-center">
+            <p className="text-slate-500 text-sm text-center">Statistiques<br/>(À venir)</p>
+          </div>
         </div>
 
-        <div className="bg-slate-800 rounded-xl overflow-hidden border border-slate-700">
-          <table className="w-full text-left">
-            <thead className="bg-slate-700/50">
-              <tr>
-                <th className="p-4">Numéro de Suivi</th>
-                <th className="p-4">Date & Heure</th>
-              </tr>
-            </thead>
-            <tbody>
-              {scans.map((scan) => (
-                <tr key={scan.id} className="border-t border-slate-700 hover:bg-slate-700/30 transition">
-                  <td className="p-4 font-mono text-green-400">{scan.tracking_number}</td>
-                  <td className="p-4 text-slate-400">
-                    {new Date(scan.created_at).toLocaleString('fr-FR')}
-                  </td>
+        {/* Table des Scans */}
+        <div className="bg-slate-800 rounded-xl overflow-hidden border border-slate-700 shadow-xl">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left whitespace-nowrap">
+              <thead className="bg-slate-900/80">
+                <tr>
+                  <th className="p-5 font-semibold text-slate-300">Numéro de Suivi</th>
+                  <th className="p-5 font-semibold text-slate-300">Date du Scan</th>
+                  <th className="p-5 font-semibold text-slate-300">Heure</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {scans.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="p-10 text-center text-slate-400 italic">
+                      La base de données est vide. Scannez un colis pour voir la magie opérer ! 📦✨
+                    </td>
+                  </tr>
+                ) : (
+                  scans.map((scan) => {
+                    const dateObj = new Date(scan.created_at);
+                    return (
+                      <tr key={scan.id} className="border-t border-slate-700/50 hover:bg-slate-700/30 transition-colors">
+                        <td className="p-5 font-mono">
+                          <span className="bg-green-400/10 text-green-400 px-3 py-1.5 rounded-md text-sm border border-green-400/20 shadow-sm">
+                            {scan.tracking_number}
+                          </span>
+                        </td>
+                        <td className="p-5 text-slate-300">
+                          {dateObj.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        </td>
+                        <td className="p-5 text-slate-400 font-mono text-sm">
+                          {dateObj.toLocaleTimeString('fr-FR')}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
