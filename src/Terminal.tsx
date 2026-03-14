@@ -7,6 +7,9 @@ export default function Terminal() {
   const [scanStatus, setScanStatus] = useState<'idle' | 'success' | 'error' | 'offline'>('idle');
   const [scanType, setScanType] = useState<'INBOUND' | 'OUTBOUND'>('INBOUND');
   
+  // 👈 NOUVEAUTÉ : L'horloge en direct
+  const [currentTime, setCurrentTime] = useState(new Date());
+
   const inputRef = useRef<HTMLInputElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -16,63 +19,53 @@ export default function Terminal() {
       const ctx = new AudioContext();
       const osc = ctx.createOscillator();
       const gainNode = ctx.createGain();
-
       osc.type = type === 'success' ? 'sine' : 'sawtooth';
       osc.frequency.setValueAtTime(type === 'success' ? 1200 : 300, ctx.currentTime);
       gainNode.gain.setValueAtTime(0.1, ctx.currentTime); 
-      
       osc.connect(gainNode);
       gainNode.connect(ctx.destination);
-      
       osc.start();
       osc.stop(ctx.currentTime + (type === 'success' ? 0.1 : 0.3));
-    } catch (e) {
-      // Silencieux
-    }
+    } catch (e) {}
   };
 
   useEffect(() => {
     inputRef.current?.focus();
+    
+    // 👈 NOUVEAUTÉ : Le moteur de l'horloge (tourne chaque seconde)
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      clearInterval(timer); // On nettoie l'horloge en quittant
     };
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (!trackingNumber.trim() || isSubmitting) return;
-
     if (!navigator.onLine) {
       setScanStatus('offline');
       playBeep('error');
       return;
     }
-
     setIsSubmitting(true);
     setScanStatus('idle');
 
     try {
       const { error } = await supabase
         .from('scans')
-        .insert([{ 
-          tracking_number: trackingNumber.trim(),
-          scan_type: scanType 
-        }]);
-
+        .insert([{ tracking_number: trackingNumber.trim(), scan_type: scanType }]);
       if (error) throw error;
 
       setScanStatus('success');
       playBeep('success');
       setTrackingNumber('');
-      
     } catch (error) {
-      console.error("Erreur critique de scan:", error);
       setScanStatus('error');
       playBeep('error');
     } finally {
       setIsSubmitting(false);
-      
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(() => {
         setScanStatus('idle');
@@ -95,14 +88,23 @@ export default function Terminal() {
 
   return (
     <div className={`min-h-screen flex flex-col items-center justify-center p-4 transition-colors duration-300 ${getBackgroundColor()}`}>
-      <div className="max-w-md w-full bg-slate-800 p-8 rounded-xl shadow-2xl border border-slate-700">
+      <div className="max-w-md w-full bg-slate-800 p-8 rounded-xl shadow-2xl border border-slate-700 relative overflow-hidden">
         
-        <div className="text-center mb-6">
+        {/* 👈 NOUVEAUTÉ : Affichage de l'horloge en haut */}
+        <div className="absolute top-0 left-0 w-full bg-slate-900/50 py-2 flex justify-center border-b border-slate-700/50">
+          <p className="font-mono text-slate-400 text-xs tracking-widest">
+            {currentTime.toLocaleDateString('fr-FR')} - <span className="text-white">{currentTime.toLocaleTimeString('fr-FR')}</span>
+          </p>
+        </div>
+
+        <div className="text-center mb-6 mt-6">
           <h1 className="text-4xl font-extrabold text-white tracking-wider mb-2">
             SCAN<span className="text-blue-500">PRO</span>
           </h1>
-          <p className="text-slate-400 font-mono text-sm tracking-widest">
-            {scanStatus === 'offline' ? '⚠️ MODE HORS-LIGNE' : 'TERMINAL ACTIF'}
+          <p className="text-slate-400 font-mono text-sm tracking-widest flex justify-center items-center gap-2">
+            {scanStatus === 'offline' ? '⚠️ MODE HORS-LIGNE' : (
+              <><span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> TERMINAL ACTIF</>
+            )}
           </p>
         </div>
 

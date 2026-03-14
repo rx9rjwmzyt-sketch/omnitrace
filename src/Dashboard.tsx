@@ -6,13 +6,16 @@ interface Scan {
   id: string;
   tracking_number: string;
   created_at: string;
-  scan_type: string; // 👈 NOUVEAUTÉ : On déclare la nouvelle colonne
+  scan_type: string;
 }
 
 export default function Dashboard() {
   const [scans, setScans] = useState<Scan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // 👈 NOUVEAUTÉ 1 : L'état de la barre de recherche
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     fetchScans();
@@ -58,6 +61,11 @@ export default function Dashboard() {
       .reverse();
   }, [scans]);
 
+  // 👈 NOUVEAUTÉ 2 : Le filtre magique ! On ne garde que les colis qui correspondent à la recherche
+  const filteredScans = scans.filter(scan => 
+    scan.tracking_number.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-800">
@@ -96,7 +104,7 @@ export default function Dashboard() {
           </span>
         </div>
 
-        {/* 📊 LA SECTION DES GRAPHIQUES */}
+        {/* LA SECTION DES GRAPHIQUES */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-center">
             <p className="text-slate-500 text-sm font-medium mb-1">Total Colis Traités</p>
@@ -123,11 +131,26 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* 🗂️ Table des Scans avec NOUVELLE COLONNE */}
+        {/* 🗂️ Table des Scans avec LA BARRE DE RECHERCHE */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="px-6 py-5 border-b border-slate-200">
+          <div className="px-6 py-5 border-b border-slate-200 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
             <h2 className="text-lg font-semibold text-slate-800">Historique récent</h2>
+            
+            {/* 👈 NOUVEAUTÉ 3 : L'Input de recherche */}
+            <div className="relative">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                🔍
+              </span>
+              <input
+                type="text"
+                placeholder="Rechercher un numéro..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 w-full sm:w-64 transition-shadow"
+              />
+            </div>
           </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-left whitespace-nowrap">
               <thead className="bg-slate-50">
@@ -139,16 +162,16 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {scans.length === 0 ? (
+                {/* On utilise filteredScans au lieu de scans ! */}
+                {filteredScans.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="px-6 py-12 text-center text-slate-500">
-                      Aucune donnée disponible pour le moment.
+                      {searchTerm ? "Aucun colis trouvé pour cette recherche. 🕵️‍♂️" : "Aucune donnée disponible pour le moment."}
                     </td>
                   </tr>
                 ) : (
-                  scans.map((scan) => {
+                  filteredScans.map((scan) => {
                     const dateObj = new Date(scan.created_at);
-                    // 👈 NOUVEAUTÉ : Logique d'affichage du badge
                     const isOutbound = scan.scan_type === 'OUTBOUND';
 
                     return (
