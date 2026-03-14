@@ -2,12 +2,13 @@ import { useEffect, useState, useMemo } from 'react';
 import { supabase } from './supabase';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
+//  L'interface comprend bien l'email de l'opérateur
 interface Scan {
   id: string;
   tracking_number: string;
   created_at: string;
   scan_type: string;
-  operator_email?: string; // On prépare le terrain pour l'utilisateur
+  operator_email?: string; 
 }
 
 export default function Dashboard() {
@@ -15,8 +16,6 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  
-  // 👈 NOUVEAUTÉ : L'état du filtre
   const [filterType, setFilterType] = useState('ALL');
 
   useEffect(() => {
@@ -63,7 +62,6 @@ export default function Dashboard() {
       .reverse();
   }, [scans]);
 
-  // 👈 NOUVEAUTÉ : On combine la recherche texte ET le filtre de type !
   const filteredScans = scans.filter(scan => {
     const matchesSearch = scan.tracking_number.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesType = filterType === 'ALL' || scan.scan_type === filterType;
@@ -71,12 +69,14 @@ export default function Dashboard() {
   });
 
   const exportToCSV = () => {
-    const headers = ["Référence Colis", "Type de Flux", "Date", "Heure"];
+    // NOUVEAUTÉ : Ajout de la colonne Opérateur dans l'Excel
+    const headers = ["Référence Colis", "Type de Flux", "Opérateur", "Date", "Heure"];
     const csvData = filteredScans.map(scan => {
       const dateObj = new Date(scan.created_at);
       return [
         scan.tracking_number,
         scan.scan_type === 'OUTBOUND' ? 'Expedition' : 'Reception',
+        scan.operator_email || 'Inconnu', // L'email part dans le CSV
         dateObj.toLocaleDateString('fr-FR'),
         dateObj.toLocaleTimeString('fr-FR')
       ].join(',');
@@ -133,8 +133,6 @@ export default function Dashboard() {
             <h2 className="text-lg font-semibold text-slate-800">Historique récent</h2>
             
             <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-              
-              {/* 👈 NOUVEAUTÉ : Le Selecteur de Filtre */}
               <select 
                 value={filterType}
                 onChange={(e) => setFilterType(e.target.value)}
@@ -172,6 +170,10 @@ export default function Dashboard() {
                 <tr>
                   <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Référence Colis</th>
                   <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Type de Flux</th>
+                  
+                  {/* 👈 NOUVEAUTÉ : En-tête de la colonne Opérateur */}
+                  <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Opérateur</th>
+                  
                   <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Date</th>
                   <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Heure</th>
                 </tr>
@@ -179,7 +181,7 @@ export default function Dashboard() {
               <tbody className="divide-y divide-slate-100">
                 {filteredScans.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-6 py-12 text-center text-slate-500">
+                    <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
                       Aucune donnée pour ce filtre. 🕵️‍♂️
                     </td>
                   </tr>
@@ -205,6 +207,14 @@ export default function Dashboard() {
                             </span>
                           )}
                         </td>
+                        
+                        {/* 👈 NOUVEAUTÉ : Affichage de l'email de l'opérateur avec un petit style sympa */}
+                        <td className="px-6 py-4">
+                          <span className="text-sm font-medium text-slate-600 bg-slate-100 px-2 py-1 rounded">
+                            {scan.operator_email ? scan.operator_email.split('@')[0] : 'Inconnu'}
+                          </span>
+                        </td>
+
                         <td className="px-6 py-4 text-sm text-slate-600">
                           {dateObj.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}
                         </td>

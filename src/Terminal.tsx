@@ -51,16 +51,16 @@ export default function Terminal() {
     setScanStatus('idle');
 
     try {
-      // 🕵️‍♂️ L'INFILTRATION : On demande à Supabase "Qui tient ce scanner ?"
+      
       const { data: { user } } = await supabase.auth.getUser();
 
-      // 📦 L'ENVOI : On ajoute l'email de l'opérateur au colis !
+      // 
       const { error } = await supabase
         .from('scans')
         .insert([{ 
           tracking_number: trackingNumber.trim(), 
           scan_type: scanType,
-          operator_email: user?.email // 👈 LA LIGNE MAGIQUE EST ICI
+          operator_email: user?.email // 
         }]);
         
       if (error) throw error;
